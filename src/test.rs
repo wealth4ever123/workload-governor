@@ -8,8 +8,6 @@
 
 extern crate std;
 
-use std::boxed::Box;
-
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
 use crate::{WorkloadGovernor, WorkloadGovernorClient};
@@ -30,7 +28,7 @@ impl TestEnv {
         let contract_id = env.register_contract(None, WorkloadGovernor);
         // SAFETY: we move `env` into the struct and keep it alive for the test's
         // duration. Box::leak gives the 'static lifetime the generated client needs.
-        let env: &'static Env = Box::leak(Box::new(env));
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
         let client = WorkloadGovernorClient::new(env, &contract_id);
         TestEnv {
             env: env.clone(),
@@ -412,7 +410,7 @@ fn fresh_client(
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register_contract(None, WorkloadGovernor);
-    let env: &'static Env = Box::leak(Box::new(env));
+    let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
     let client = WorkloadGovernorClient::new(env, &contract_id);
     let admin = Address::generate(env);
     let maintainer = Address::generate(env);
@@ -683,38 +681,24 @@ proptest! {
 // UPGRADE STATE-PRESERVATION TESTS
 // ---------------------------------------------------------------------------
 //
-// Strategy: deploy V1, populate every storage category, call upgrade() with a
-// re-uploaded copy of the same WASM (so we exercise the real code path without
-// needing a separate V2 binary), then assert every piece of V1 state is still
-// readable and every contract function still behaves identically.
-//
-// In Soroban's native test environment `upload_contract_wasm` accepts any byte
-// slice and `update_current_contract_wasm` is handled by the host; state is
-// preserved across the call because storage is independent of the WASM hash.
-// That is exactly the invariant this test suite verifies.
+// These tests require the compiled WASM artifact at
+// target/wasm32v1-none/release/workload_governor.wasm (set by build.rs).
+// They are skipped in cargo-mutants scratch environments where the WASM
+// has not been built.
 
-/// Build the "V2" wasm hash by re-uploading the current contract's own WASM.
-/// In native-test mode the hash is deterministic; the important thing is that
-/// the upgrade code path (auth check + host call) executes successfully and
-/// leaves all storage intact.
-#[cfg(test)]
+/// Returns a WASM hash by uploading the contract's own compiled WASM bytes.
+/// The path is relative to the workspace root at compile time.
+#[cfg(all(test, wasm_available))]
 fn upload_self_wasm(env: &Env) -> soroban_sdk::BytesN<32> {
-    // soroban_sdk exposes the compiled WASM bytes for the current crate via
-    // the `contractimport!`-generated WASM constant when built with testutils.
-    // For a self-upgrade we derive an arbitrary-but-stable 32-byte hash by
-    // uploading a minimal valid WASM module recognised by the test host.
-    // The minimal WASM magic + version header is enough for the host to accept
-    // the upload and return a unique hash.
-    let wasm_bytes = soroban_sdk::Bytes::from_slice(
-        env,
-        // Minimal valid WASM: magic (4) + version (4) — no sections needed for upload
-        &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+    const WASM: &[u8] = include_bytes!(
+        "../target/wasm32v1-none/release/workload_governor.wasm"
     );
-    env.deployer().upload_contract_wasm(wasm_bytes)
+    let bytes = soroban_sdk::Bytes::from_slice(env, WASM);
+    env.deployer().upload_contract_wasm(bytes)
 }
 
 /// Helper: build a fully-populated V1 environment and return the actors.
-#[cfg(test)]
+#[cfg(all(test, wasm_available))]
 struct UpgradeFixture {
     env: Env,
     client: WorkloadGovernorClient<'static>,
@@ -724,13 +708,13 @@ struct UpgradeFixture {
     org: Symbol,
 }
 
-#[cfg(test)]
+#[cfg(all(test, wasm_available))]
 impl UpgradeFixture {
     fn new() -> Self {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, WorkloadGovernor);
-        let env: &'static Env = Box::leak(Box::new(env));
+        let env: &'static Env = std::boxed::Box::leak(std::boxed::Box::new(env));
         let client = WorkloadGovernorClient::new(env, &contract_id);
 
         let admin = Address::generate(env);
@@ -761,6 +745,7 @@ impl UpgradeFixture {
 }
 
 /// Verify that `upgrade()` panics when called before `initialize` (NotInitialized guard).
+#[cfg(wasm_available)]
 #[test]
 #[should_panic]
 fn unit_upgrade_rejects_not_initialized() {
@@ -773,6 +758,7 @@ fn unit_upgrade_rejects_not_initialized() {
 }
 
 /// Core: pre-upgrade state is fully preserved post-upgrade.
+#[cfg(wasm_available)]
 #[test]
 fn unit_upgrade_preserves_all_state() {
     let t = UpgradeFixture::new();
@@ -828,6 +814,7 @@ fn unit_upgrade_preserves_all_state() {
 }
 
 /// V1 functions behave identically on the upgraded contract.
+#[cfg(wasm_available)]
 #[test]
 fn unit_upgrade_functions_behave_identically() {
     let t = UpgradeFixture::new();
@@ -888,6 +875,7 @@ fn unit_upgrade_functions_behave_identically() {
 }
 
 /// Global and org caps are still enforced after upgrade.
+#[cfg(wasm_available)]
 #[test]
 fn unit_upgrade_limits_still_enforced() {
     let t = UpgradeFixture::new();
@@ -921,6 +909,7 @@ fn unit_upgrade_limits_still_enforced() {
 }
 
 /// Upgrade is idempotent: calling it twice does not corrupt state.
+#[cfg(wasm_available)]
 #[test]
 fn unit_upgrade_idempotent() {
     let t = UpgradeFixture::new();
