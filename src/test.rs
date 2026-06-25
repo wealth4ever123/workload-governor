@@ -6,6 +6,9 @@
 
 #![cfg(test)]
 
+extern crate std;
+use std::boxed::Box;
+
 use soroban_sdk::{testutils::Address as _, Address, Env, Symbol};
 
 use crate::{WorkloadGovernor, WorkloadGovernorClient};
