@@ -3,7 +3,7 @@ import { createApp } from './app';
 import { migrate, pool } from './db';
 import { initRedis, closeRedis } from './cache';
 
-const PORT = process.env.PORT ?? 3000;
+const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
 async function start(): Promise<void> {
