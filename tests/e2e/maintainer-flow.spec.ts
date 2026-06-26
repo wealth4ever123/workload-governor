@@ -9,12 +9,12 @@ const MOCK_APPLICATIONS = [
 
 test('maintainer assign and complete flow', async ({ page }) => {
   await page.addInitScript(({ pubkey, apps, xdr }) => {
-    (window as any).freighter = {
+    (window as Record<string, unknown>).freighter = {
       isConnected: () => Promise.resolve(true),
       getPublicKey: () => Promise.resolve(pubkey),
-      signTransaction: (_xdr: string) => Promise.resolve(xdr),
+      signTransaction: () => Promise.resolve(xdr),
     };
-    (window as any).__mockApplications = apps;
+    (window as Record<string, unknown>).__mockApplications = apps;
   }, { pubkey: MAINTAINER_KEY, apps: MOCK_APPLICATIONS, xdr: FIXED_XDR });
 
   await page.goto('/maintainer');
