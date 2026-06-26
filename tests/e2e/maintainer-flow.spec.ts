@@ -1,21 +1,40 @@
 import { test, expect } from '@playwright/test';
 
 const MAINTAINER_KEY = 'GBMAINTAINER000000000000000000000000000000000000000000000002';
-const FIXED_XDR = 'AAAAAgAAAAA...FIXEDXDR...AAAAA==';
 
-const MOCK_APPLICATIONS = [
+interface MockApplication {
+  contributor: string;
+  orgId: string;
+  issueId: string;
+}
+
+interface Window {
+  freighter: {
+    isConnected: () => Promise<boolean>;
+    getPublicKey: () => Promise<string>;
+    signTransaction: (xdr: string) => Promise<string>;
+  };
+  __mockApplications: MockApplication[];
+}
+
+const MOCK_APPLICATIONS: MockApplication[] = [
   { contributor: 'GACONTRIBUTOR001', orgId: 'org-stellar', issueId: 'issue-42' },
 ];
+const FIXED_XDR = 'AAAAAgAAAAA...FIXEDXDR...AAAAA==';
 
 test('maintainer assign and complete flow', async ({ page }) => {
-  await page.addInitScript(({ pubkey, apps, xdr }) => {
-    (window as Record<string, unknown>).freighter = {
+  await page.addInitScript(() => {
+    const window_ = window as unknown as Window;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    window_.freighter = {
       isConnected: () => Promise.resolve(true),
-      getPublicKey: () => Promise.resolve(pubkey),
-      signTransaction: () => Promise.resolve(xdr),
+      getPublicKey: () => Promise.resolve(MAINTAINER_KEY),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      signTransaction: (_xdr: string) => Promise.resolve(FIXED_XDR),
     };
-    (window as Record<string, unknown>).__mockApplications = apps;
-  }, { pubkey: MAINTAINER_KEY, apps: MOCK_APPLICATIONS, xdr: FIXED_XDR });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    window_.__mockApplications = MOCK_APPLICATIONS;
+  });
 
   await page.goto('/maintainer');
 

@@ -11,6 +11,7 @@ const logger = pino({
 export { logger };
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       correlationId: string;
@@ -46,7 +47,6 @@ export function errorHandler(
   err: Error,
   _req: Request,
   res: Response,
-  _next: NextFunction,
 ): void {
   const correlationId = _req.correlationId ?? 'unknown';
   logger.error({
