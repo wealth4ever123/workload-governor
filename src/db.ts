@@ -34,65 +34,26 @@ async function runMigration(client: PoolClient, name: string, sql: string): Prom
 }
 
 export async function migrate(): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    await runMigration(
-      client,
-      'create_issues_table',
-      `CREATE TABLE IF NOT EXISTS issues (
-        id        SERIAL PRIMARY KEY,
-        org_id    TEXT    NOT NULL,
-        title     TEXT    NOT NULL,
-        status    TEXT    NOT NULL DEFAULT 'open',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE(org_id, id)
-      )`,
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS issues (
+      id        INTEGER PRIMARY KEY,
+      github_id INTEGER NOT NULL UNIQUE,
+      org       TEXT    NOT NULL,
+      title     TEXT    NOT NULL,
+      body      TEXT,
+      labels    TEXT[],
+      state     TEXT    NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    await runMigration(
-      client,
-      'create_maintainers_table',
-      `CREATE TABLE IF NOT EXISTS maintainers (
-        address TEXT NOT NULL,
-        org_id  TEXT NOT NULL,
-        PRIMARY KEY (address, org_id)
-      )`,
-    );
+    CREATE INDEX IF NOT EXISTS idx_issues_org ON issues(org);
+    CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
 
-    await runMigration(
-      client,
-      'create_applications_table',
-      `CREATE TABLE IF NOT EXISTS applications (
-        contributor TEXT    NOT NULL,
-        org_id      TEXT    NOT NULL,
-        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (contributor, org_id, issue_id)
-      )`,
-    );
-
-    await runMigration(
-      client,
-      'create_assignments_table',
-      `CREATE TABLE IF NOT EXISTS assignments (
-        contributor TEXT    NOT NULL,
-        org_id      TEXT    NOT NULL,
-        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (contributor, org_id, issue_id)
-      )`,
-    );
-
-    await runMigration(
-      client,
-      'create_sync_cursors_table',
-      `CREATE TABLE IF NOT EXISTS sync_cursors (
-        id        TEXT PRIMARY KEY,
-        cursor    TEXT NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )`,
+    CREATE TABLE IF NOT EXISTS sync_metadata (
+      id           SERIAL PRIMARY KEY,
+      org          TEXT    NOT NULL UNIQUE,
+      last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     await runMigration(

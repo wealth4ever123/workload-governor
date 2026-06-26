@@ -922,6 +922,28 @@ fn unit_upgrade_idempotent() {
     assert!(t.client.is_assigned(&t.contributor, &t.org, &20u32));
 }
 
+/// Issue #44: non-admin calling upgrade must fail with a host Auth error (error 3).
+/// The stored admin's `require_auth()` rejects any other caller.
+#[test]
+#[should_panic]
+fn unit_upgrade_rejects_non_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, WorkloadGovernor);
+    let client = WorkloadGovernorClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.initialize(&admin);
+
+    // Upload the hash while auths are still mocked, then strip them.
+    let hash = upload_self_wasm(&env);
+
+    // Remove all auth mocks — stored_admin.require_auth() will now reject
+    env.set_auths(&[]);
+    // Must panic: non-admin (no auth) calls upgrade
+    client.upgrade(&hash);
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {
@@ -941,6 +963,84 @@ fn prop_storage_key_collision_freedom() {
     assert_eq!(t.client.get_org_assignment_count(&contributor, &org), 1);
     assert!(!t.client.has_applied(&contributor, &org, &1u32)); // consumed by assign
     assert!(t.client.is_assigned(&contributor, &org, &1u32));
+}
+
+// Issue #43: Boundary-value key collision test.
+//
+// Strategy: use two distinct addresses and two distinct org symbols so that
+// patterns 1/4/5 (contributor-scoped) and patterns 2/6 (triple-scoped) are
+// exercised at boundary issue_ids (0 and u32::MAX). We drive every key pattern
+// through the public contract API and assert all six storage categories remain
+// independent — no cross-pattern read returns a value written by a different
+// pattern.
+//
+// Collision-free argument (mirrors storage.rs doc-comment):
+//   Every key tuple starts with a unique symbol_short! prefix. Two keys from
+//   different patterns can never match because the Soroban host serialises the
+//   whole tuple; a prefix mismatch at byte 0 makes equality impossible.
+#[test]
+fn unit_storage_key_no_collision_boundary_values() {
+    let t = TestEnv::new();
+    let admin = Address::generate(&t.env);
+    let maintainer_a = Address::generate(&t.env);
+    let maintainer_b = Address::generate(&t.env);
+    let contributor_a = Address::generate(&t.env);
+    let contributor_b = Address::generate(&t.env);
+    let org_a = t.org("aaaaaaa"); // boundary: max-length 7-char symbol
+    let org_b = t.org("b");       // boundary: min-length 1-char symbol
+
+    t.client.initialize(&admin);
+    t.client.register_maintainer(&admin, &maintainer_a, &org_a);
+    t.client.register_maintainer(&admin, &maintainer_b, &org_b);
+
+    // Boundary issue_ids: 0 and u32::MAX
+    let issue_min: u32 = 0;
+    let issue_max: u32 = u32::MAX;
+
+    // contributor_a applies for boundary issues in org_a
+    t.client.apply_for_issue(&contributor_a, &org_a, &issue_min);
+    t.client.apply_for_issue(&contributor_a, &org_a, &issue_max);
+
+    // contributor_b applies in org_b with the same issue ids
+    t.client.apply_for_issue(&contributor_b, &org_b, &issue_min);
+    t.client.apply_for_issue(&contributor_b, &org_b, &issue_max);
+
+    // ── Pattern 1 ("g_apps") vs Pattern 2 ("app") ──────────────────────────
+    // g_apps counts must not be confused with app-entry booleans
+    assert_eq!(t.client.get_global_application_count(&contributor_a), 2);
+    assert_eq!(t.client.get_global_application_count(&contributor_b), 2);
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_min));
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_max));
+
+    // ── Pattern 2 ("app") cross-contributor isolation ──────────────────────
+    // contributor_b's entries must not pollute contributor_a's
+    assert!(!t.client.has_applied(&contributor_a, &org_b, &issue_min));
+    assert!(!t.client.has_applied(&contributor_b, &org_a, &issue_min));
+
+    // ── Pattern 2 ("app") cross-issue isolation ────────────────────────────
+    // issue_min entry must not alias issue_max entry
+    assert!(t.client.has_applied(&contributor_a, &org_a, &issue_max));
+
+    // assign boundary issues → exercises Patterns 4 ("maint"), 5 ("o_asgn"), 6 ("asgn")
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_min);
+    t.client.assign_issue(&maintainer_a, &contributor_a, &org_a, &issue_max);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_min);
+    t.client.assign_issue(&maintainer_b, &contributor_b, &org_b, &issue_max);
+
+    // ── Pattern 5 ("o_asgn") vs Pattern 6 ("asgn") ────────────────────────
+    // org assignment count (pattern 5) must not collide with assignment sentinel (pattern 6)
+    assert_eq!(t.client.get_org_assignment_count(&contributor_a, &org_a), 2);
+    assert_eq!(t.client.get_org_assignment_count(&contributor_b, &org_b), 2);
+    assert!(t.client.is_assigned(&contributor_a, &org_a, &issue_min));
+    assert!(t.client.is_assigned(&contributor_a, &org_a, &issue_max));
+
+    // ── Pattern 6 ("asgn") cross-contributor / cross-org isolation ─────────
+    assert!(!t.client.is_assigned(&contributor_a, &org_b, &issue_min));
+    assert!(!t.client.is_assigned(&contributor_b, &org_a, &issue_min));
+
+    // ── Pattern 1 ("g_apps") consumed to 0 after both assignments ──────────
+    assert_eq!(t.client.get_global_application_count(&contributor_a), 0);
+    assert_eq!(t.client.get_global_application_count(&contributor_b), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1151,3 +1251,106 @@ mod error_cases {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Issue #49: Cap invariant property tests (10 000 cases each)
+// ---------------------------------------------------------------------------
+
+// Property: for any (contributor, org), assignment count never exceeds 4
+// under arbitrary apply/assign/complete/revoke sequences.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_org_assignment_cap_never_exceeds_4(
+        // sequence of actions: 0=apply, 1=assign, 2=complete, 3=revoke; issue_id 0..4
+        actions in proptest::collection::vec((0u8..4u8, 0u32..4u32), 1..20)
+    ) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("orgcap");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut assigned: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (action, issue_id) in actions {
+            match action {
+                0 => { // apply
+                    if !applied.contains(&issue_id) && !assigned.contains(&issue_id)
+                        && client.get_global_application_count(&contributor) < 15
+                    {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                        applied.insert(issue_id);
+                    }
+                }
+                1 => { // assign
+                    if applied.contains(&issue_id) {
+                        let count = client.get_org_assignment_count(&contributor, &org);
+                        if count < 4 {
+                            client.assign_issue(&maintainer, &contributor, &org, &issue_id);
+                            applied.remove(&issue_id);
+                            assigned.insert(issue_id);
+                        }
+                    }
+                }
+                2 => { // complete
+                    if assigned.contains(&issue_id) {
+                        client.complete_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                    }
+                }
+                _ => { // revoke
+                    if assigned.contains(&issue_id) {
+                        client.revoke_assignment(&maintainer, &contributor, &org, &issue_id);
+                        assigned.remove(&issue_id);
+                    }
+                }
+            }
+            // invariant: org assignment count never exceeds 4
+            prop_assert!(
+                client.get_org_assignment_count(&contributor, &org) <= 4,
+                "org assignment count exceeded 4"
+            );
+        }
+    }
+}
+
+// Property: no two applications with identical (contributor, org, issue) exist simultaneously.
+// Verified by tracking applied set and asserting the contract rejects any duplicate attempt.
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_no_duplicate_application_exists(
+        actions in proptest::collection::vec((proptest::bool::ANY, 0u32..10u32), 1..20)
+    ) {
+        let (_, client, admin, _, contributor, org) = fresh_client("nodup");
+        client.initialize(&admin);
+
+        let mut applied: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+        for (do_apply, issue_id) in actions {
+            if do_apply {
+                if applied.contains(&issue_id) {
+                    // Must reject — duplicate (contributor, org, issue)
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        client.apply_for_issue(&contributor, &org, &issue_id);
+                    }));
+                    prop_assert!(result.is_err(), "duplicate application should be rejected");
+                } else if client.get_global_application_count(&contributor) < 15 {
+                    client.apply_for_issue(&contributor, &org, &issue_id);
+                    applied.insert(issue_id);
+                }
+            } else if applied.contains(&issue_id) {
+                client.withdraw_application(&contributor, &org, &issue_id);
+                applied.remove(&issue_id);
+            }
+
+            // invariant: has_applied reflects the applied set exactly
+            for &id in &applied {
+                prop_assert!(
+                    client.has_applied(&contributor, &org, &id),
+                    "applied set and contract disagree for issue {}", id
+                );
+            }
+        }
+    }
+}

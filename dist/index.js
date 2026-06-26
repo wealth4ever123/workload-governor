@@ -3,33 +3,50 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const app_1 = require("./app");
 const db_1 = require("./db");
-const cache_1 = require("./cache");
+const scheduler_1 = require("./scheduler");
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 async function start() {
     try {
-        console.log('Initializing application...');
         await (0, db_1.migrate)();
-        await (0, cache_1.initRedis)();
         const app = (0, app_1.createApp)();
         const server = app.listen(PORT, HOST, () => {
             console.log(`Server running on http://${HOST}:${PORT}`);
         });
-        const shutdown = async (signal) => {
-            console.log(`\n${signal} received, shutting down gracefully...`);
+        // Start scheduler for GitHub issues sync
+        const orgsEnv = process.env.GITHUB_ORGS ?? '';
+        const orgs = orgsEnv
+            .split(',')
+            .map((org) => org.trim())
+            .filter((org) => org.length > 0);
+        if (orgs.length > 0) {
+            (0, scheduler_1.startScheduler)(orgs);
+        }
+        // Graceful shutdown
+        const gracefulShutdown = async (signal) => {
+            console.log(`${signal} received, starting graceful shutdown...`);
+            (0, scheduler_1.stopScheduler)();
             server.close(async () => {
                 console.log('HTTP server closed');
-                await (0, cache_1.closeRedis)();
                 await db_1.pool.end();
-                console.log('Database connection closed');
+                console.log('Database pool closed');
                 process.exit(0);
             });
+            // Force shutdown after 30 seconds
+            setTimeout(() => {
+                console.error('Forced shutdown after timeout');
+                process.exit(1);
+            }, 30000);
         };
-        process.on('SIGTERM', () => shutdown('SIGTERM'));
-        process.on('SIGINT', () => shutdown('SIGINT'));
+        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+        process.on('unhandledRejection', (reason, promise) => {
+            console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+            process.exit(1);
+        });
     }
     catch (err) {
-        console.error('Failed to start application:', err);
+        console.error('Failed to start server', err);
         process.exit(1);
     }
 }
