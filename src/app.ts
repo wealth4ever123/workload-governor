@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -6,6 +6,8 @@ import issuesRouter from './routes/issues';
 import contributorsRouter from './routes/contributors';
 import adminRouter from './routes/admin';
 import transactionsRouter from './routes/transactions';
+import webhooksRouter from './routes/webhooks';
+import { globalLimiter, walletLimiter } from './middleware/rate-limit';
 
 export function createApp(): express.Application {
   const app = express();
@@ -26,22 +28,19 @@ export function createApp(): express.Application {
   // JSON parser middleware
   app.use(express.json());
 
-  app.get('/health', async (req: Request, res: Response) => {
-    try {
-      await healthCheck();
-      const redisClient = getRedisClient();
-      await redisClient.ping();
-      res.json({ status: 'healthy', database: 'connected', cache: 'connected' });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown error';
-      res.status(503).json({ status: 'unhealthy', error: msg });
-    }
+  // Rate limiting middleware
+  app.use(globalLimiter);
+
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok' });
   });
 
+  // Routes
   app.use('/api/issues', issuesRouter);
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
-  app.use('/api/transactions', transactionsRouter);
+  app.use('/api/transactions', walletLimiter, transactionsRouter);
+  app.use('/webhooks', webhooksRouter);
 
   return app;
 }

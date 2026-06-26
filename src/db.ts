@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 
 const poolConfig = {
   connectionString: process.env.DATABASE_URL,
@@ -23,59 +23,48 @@ export async function healthCheck(): Promise<void> {
   }
 }
 
-async function runMigration(client: PoolClient, name: string, sql: string): Promise<void> {
-  try {
-    await client.query(sql);
-    console.log(`✓ Migration: ${name}`);
-  } catch (err) {
-    console.error(`✗ Migration failed: ${name}`, err);
-    throw err;
-  }
-}
-
 export async function migrate(): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS issues (
-      id        INTEGER PRIMARY KEY,
-      github_id INTEGER NOT NULL UNIQUE,
-      org       TEXT    NOT NULL,
-      title     TEXT    NOT NULL,
-      body      TEXT,
-      labels    TEXT[],
-      state     TEXT    NOT NULL DEFAULT 'open',
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-    CREATE INDEX IF NOT EXISTS idx_issues_org ON issues(org);
-    CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS issues (
+        id        SERIAL PRIMARY KEY,
+        org_id    TEXT    NOT NULL,
+        title     TEXT    NOT NULL,
+        status    TEXT    NOT NULL DEFAULT 'open',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
 
-    CREATE TABLE IF NOT EXISTS sync_metadata (
-      id           SERIAL PRIMARY KEY,
-      org          TEXT    NOT NULL UNIQUE,
-      last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS maintainers (
+        address TEXT NOT NULL,
+        org_id  TEXT NOT NULL,
+        PRIMARY KEY (address, org_id)
+      );
+    `);
 
-    await runMigration(
-      client,
-      'create_issues_search_index',
-      `CREATE INDEX IF NOT EXISTS idx_issues_org_id_status
-        ON issues(org_id, status)`,
-    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS applications (
+        contributor TEXT    NOT NULL,
+        org_id      TEXT    NOT NULL,
+        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (contributor, org_id, issue_id)
+      );
+    `);
 
-    await runMigration(
-      client,
-      'create_applications_contributor_index',
-      `CREATE INDEX IF NOT EXISTS idx_applications_contributor
-        ON applications(contributor)`,
-    );
-
-    await runMigration(
-      client,
-      'create_assignments_contributor_index',
-      `CREATE INDEX IF NOT EXISTS idx_assignments_contributor
-        ON assignments(contributor)`,
-    );
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS assignments (
+        contributor TEXT    NOT NULL,
+        org_id      TEXT    NOT NULL,
+        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (contributor, org_id, issue_id)
+      );
+    `);
 
     await client.query('COMMIT');
     console.log('✓ All migrations completed successfully');

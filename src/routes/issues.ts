@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { getCached, setCached } from '../cache';
+import { validateRequest } from '../middleware/validation';
+import { issueQuerySchema } from '../schemas/issues';
 
 const router = Router();
 const CACHE_TTL = 30;
@@ -29,9 +31,12 @@ interface IssuesResponse {
   totalPages: number;
 }
 
-router.get('/', async (req: Request, res: Response) => {
-  try {
-    const { org_id, status, search, page = '1', limit = '10' } = req.query as IssuesListParams;
+router.get(
+  '/',
+  validateRequest({ query: issueQuerySchema }),
+  async (req: Request, res: Response) => {
+    try {
+      const { org_id, status, search, page = '1', limit = '10' } = req.query as IssuesListParams;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
@@ -89,7 +94,8 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'internal server error';
     res.status(500).json({ error: msg });
+    }
   }
-});
+);
 
 export default router;

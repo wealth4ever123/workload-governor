@@ -3,9 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = require("../db");
 const cache_1 = require("../cache");
+const validation_1 = require("../middleware/validation");
+const issues_1 = require("../schemas/issues");
 const router = (0, express_1.Router)();
 const CACHE_TTL = 30;
-router.get('/', async (req, res) => {
+router.get('/', (0, validation_1.validateRequest)({ query: issues_1.issueQuerySchema }), async (req, res) => {
     try {
         const { org_id, status, search, page = '1', limit = '10' } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10) || 1);

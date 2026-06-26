@@ -12,6 +12,8 @@ const issues_1 = __importDefault(require("./routes/issues"));
 const contributors_1 = __importDefault(require("./routes/contributors"));
 const admin_1 = __importDefault(require("./routes/admin"));
 const transactions_1 = __importDefault(require("./routes/transactions"));
+const webhooks_1 = __importDefault(require("./routes/webhooks"));
+const rate_limit_1 = require("./middleware/rate-limit");
 function createApp() {
     const app = (0, express_1.default)();
     // Security middleware
@@ -26,21 +28,16 @@ function createApp() {
     app.use((0, morgan_1.default)('combined'));
     // JSON parser middleware
     app.use(express_1.default.json());
-    app.get('/health', async (req, res) => {
-        try {
-            await (0, db_1.healthCheck)();
-            const redisClient = (0, cache_1.getRedisClient)();
-            await redisClient.ping();
-            res.json({ status: 'healthy', database: 'connected', cache: 'connected' });
-        }
-        catch (err) {
-            const msg = err instanceof Error ? err.message : 'unknown error';
-            res.status(503).json({ status: 'unhealthy', error: msg });
-        }
+    // Rate limiting middleware
+    app.use(rate_limit_1.globalLimiter);
+    app.get('/health', (_req, res) => {
+        res.json({ status: 'ok' });
     });
+    // Routes
     app.use('/api/issues', issues_1.default);
     app.use('/api/contributors', contributors_1.default);
     app.use('/api/admin', admin_1.default);
-    app.use('/api/transactions', transactions_1.default);
+    app.use('/api/transactions', rate_limit_1.walletLimiter, transactions_1.default);
+    app.use('/webhooks', webhooks_1.default);
     return app;
 }

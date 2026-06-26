@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { syncService } from '../sync';
+import { validateRequest } from '../middleware/validation';
+import { addMaintainerSchema } from '../schemas/admin';
+import { getMetrics } from '../services/redis';
 
 const router = Router();
 
@@ -13,23 +16,36 @@ function authMiddleware(req: Request, res: Response, next: () => void): void {
   next();
 }
 
-// POST /api/admin/maintainers  body: { address, org_id }
-router.post('/maintainers', authMiddleware, async (req: Request, res: Response) => {
-  const { address, org_id } = req.body as { address?: string; org_id?: string };
-  if (!address || !org_id) {
-    res.status(400).json({ error: 'address and org_id required' });
-    return;
-  }
-  try {
-    await pool.query(
-      `INSERT INTO maintainers (address, org_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [address, org_id],
-    );
-    res.status(201).json({ address, org_id });
-  } catch {
-    res.status(500).json({ error: 'internal server error' });
-  }
+// GET /api/admin/metrics
+router.get('/metrics', authMiddleware, (req: Request, res: Response) => {
+  const metrics = getMetrics();
+  res.json({
+    cache: metrics,
+  });
 });
+
+// POST /api/admin/maintainers  body: { address, org_id }
+router.post(
+  '/maintainers',
+  authMiddleware,
+  validateRequest({ body: addMaintainerSchema }),
+  async (req: Request, res: Response) => {
+    const { address, org_id } = req.body as {
+      address: string;
+      org_id: string;
+    };
+
+    try {
+      await pool.query(
+        `INSERT INTO maintainers (address, org_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [address, org_id]
+      );
+      res.status(201).json({ address, org_id });
+    } catch {
+      res.status(500).json({ error: 'internal server error' });
+    }
+  }
+);
 
 // POST /api/admin/sync  body: { orgs: string[] }
 // Trigger manual sync of GitHub issues for specified organizations
