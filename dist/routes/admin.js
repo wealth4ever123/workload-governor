@@ -2,64 +2,69 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = require("../db");
-const sync_1 = require("../sync");
+const soroban_1 = require("../soroban");
+const signature_1 = require("../signature");
+const stellar_sdk_1 = require("@stellar/stellar-sdk");
+const logger_1 = require("../logger");
 const router = (0, express_1.Router)();
-function authMiddleware(req, res, next) {
-    const token = req.headers['x-admin-token'];
-    if (token !== process.env.ADMIN_TOKEN) {
+const soroban = new soroban_1.SorobanService();
+async function signatureAuthMiddleware(req, res, next) {
+    const authHeader = req.headers.authorization;
+    const signed = (0, signature_1.parseAuthHeader)(authHeader);
+    if (!signed) {
         res.status(401).json({ error: 'unauthorized' });
         return;
     }
+    if (!(0, signature_1.verifySignature)(signed.adminAddress, signed.message, signed.signature)) {
+        logger_1.logger.warn({
+            correlationId: req.correlationId,
+            message: 'Invalid admin signature',
+            adminAddress: signed.adminAddress,
+        });
+        res.status(401).json({ error: 'unauthorized' });
+        return;
+    }
+    req.adminAddress = signed.adminAddress;
     next();
 }
-// POST /api/admin/maintainers  body: { address, org_id }
-router.post('/maintainers', authMiddleware, async (req, res) => {
-    const { address, org_id } = req.body;
-    if (!address || !org_id) {
-        res.status(400).json({ error: 'address and org_id required' });
+// POST /api/admin/maintainers
+// Body: { maintainer_address, org_id, sequence }
+// Returns unsigned transaction XDR for admin to sign
+router.post('/maintainers', signatureAuthMiddleware, async (req, res) => {
+    const adminReq = req;
+    const { maintainer_address, org_id, sequence } = req.body;
+    if (!maintainer_address || !org_id || !sequence) {
+        res.status(400).json({
+            error: 'maintainer_address, org_id, and sequence required',
+        });
         return;
     }
     try {
-        await db_1.pool.query(`INSERT INTO maintainers (address, org_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [address, org_id]);
-        res.status(201).json({ address, org_id });
-    }
-    catch {
-        res.status(500).json({ error: 'internal server error' });
-    }
-});
-// POST /api/admin/sync  body: { orgs: string[] }
-// Trigger manual sync of GitHub issues for specified organizations
-router.post('/sync', authMiddleware, async (req, res) => {
-    const { orgs } = req.body;
-    if (!orgs || !Array.isArray(orgs) || orgs.length === 0) {
-        res.status(400).json({ error: 'orgs array required' });
-        return;
-    }
-    try {
-        const results = await sync_1.syncService.syncAllOrgs(orgs);
-        res.json({
-            message: 'Sync completed',
-            results,
+        // Build the register_maintainer transaction
+        const account = adminReq.adminAddress;
+        const args = [
+            new stellar_sdk_1.Address(maintainer_address).toScVal(),
+            (0, stellar_sdk_1.nativeToScVal)(org_id, { type: 'symbol' }),
+        ];
+        const tx = soroban.buildRawTransaction(account, sequence, 'register_maintainer', args);
+        // Store pending transaction for later verification
+        await db_1.pool.query(`INSERT INTO pending_transactions (admin_address, org_id, maintainer_address, transaction_xdr, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (admin_address, maintainer_address, org_id) DO UPDATE
+       SET transaction_xdr = $4, created_at = NOW()`, [account, org_id, maintainer_address, tx.toXDR()]);
+        res.status(200).json({
+            xdr: tx.toXDR(),
+            message: 'Sign this transaction with your admin key and submit to /broadcast',
         });
     }
-    catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: `Sync failed: ${errorMsg}` });
-    }
-});
-// POST /api/admin/sync/:org  Trigger sync for a single organization
-router.post('/sync/:org', authMiddleware, async (req, res) => {
-    const { org } = req.params;
-    try {
-        const result = await sync_1.syncService.syncIssuesForOrg(org);
-        res.json({
-            message: 'Sync completed for org',
-            result,
+    catch (err) {
+        const msg = err instanceof Error ? err.message : 'internal error';
+        logger_1.logger.error({
+            correlationId: adminReq.correlationId,
+            error: msg,
+            stack: err instanceof Error ? err.stack : undefined,
         });
-    }
-    catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: `Sync failed: ${errorMsg}` });
+        res.status(400).json({ error: msg });
     }
 });
 exports.default = router;

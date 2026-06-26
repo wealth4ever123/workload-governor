@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 
 const poolConfig = {
   connectionString: process.env.DATABASE_URL,
@@ -20,16 +20,6 @@ export async function healthCheck(): Promise<void> {
     await client.query('SELECT 1');
   } finally {
     client.release();
-  }
-}
-
-async function runMigration(client: PoolClient, name: string, sql: string): Promise<void> {
-  try {
-    await client.query(sql);
-    console.log(`✓ Migration: ${name}`);
-  } catch (err) {
-    console.error(`✗ Migration failed: ${name}`, err);
-    throw err;
   }
 }
 

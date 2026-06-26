@@ -2,20 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = require("../db");
-const cache_1 = require("../cache");
 const router = (0, express_1.Router)();
-const CACHE_TTL = 30;
 router.get('/', async (req, res) => {
     try {
         const { org_id, status, search, page = '1', limit = '10' } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
-        const cacheKey = `issues:${org_id}:${status}:${search}:${pageNum}:${limitNum}`;
-        const cached = await (0, cache_1.getCached)(cacheKey);
-        if (cached) {
-            res.json(cached);
-            return;
-        }
         const conditions = [];
         const params = [];
         if (org_id) {
@@ -44,7 +36,6 @@ router.get('/', async (req, res) => {
             limit: limitNum,
             totalPages: Math.ceil(total / limitNum),
         };
-        await (0, cache_1.setCached)(cacheKey, response, CACHE_TTL);
         res.json(response);
     }
     catch (err) {
