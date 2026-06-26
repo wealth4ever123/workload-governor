@@ -618,6 +618,89 @@ proptest! {
     }
 }
 
+// Feature: workload-governor, Property: Org Cap Never Exceeded Under Arbitrary Sequences
+//
+// Strategy: random sequences of (apply+assign), revoke, complete over a pool of
+// 8 issue IDs for one (contributor, org) pair.
+// Invariant: org assignment count stays in [0, 4] after every action.
+// Cap boundary: assigning a 5th issue returns error 7; state is unchanged.
+
+#[derive(Clone, Debug)]
+enum OrgAction {
+    AssignNew(u32), // apply then assign the given issue id
+    Revoke(u32),    // revoke an active assignment
+    Complete(u32),  // complete an active assignment
+}
+
+fn arb_org_actions() -> impl Strategy<Value = Vec<OrgAction>> {
+    // 8 distinct issue IDs; sequences up to 50 steps
+    prop::collection::vec(
+        prop_oneof![
+            (0u32..8u32).prop_map(OrgAction::AssignNew),
+            (0u32..8u32).prop_map(OrgAction::Revoke),
+            (0u32..8u32).prop_map(OrgAction::Complete),
+        ],
+        0..50,
+    )
+}
+
+proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(10_000))]
+    #[test]
+    fn prop_org_cap(actions in arb_org_actions()) {
+        let (_, client, admin, maintainer, contributor, org) = fresh_client("orgcap");
+        client.initialize(&admin);
+        client.register_maintainer(&admin, &maintainer, &org);
+
+        // Track state locally to drive valid operations
+        let mut assigned: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+        for action in &actions {
+            match action {
+                OrgAction::AssignNew(id) => {
+                    if assigned.contains(id) {
+                        continue; // already assigned — skip to avoid DuplicateApplication
+                    }
+                    client.apply_for_issue(&contributor, &org, id);
+                    if assigned.len() < 4 {
+                        client.assign_issue(&maintainer, &contributor, &org, id);
+                        assigned.insert(*id);
+                    } else {
+                        // At cap: assign must fail with OrgAssignmentLimitReached (error 7)
+                        let count_before = client.get_org_assignment_count(&contributor, &org);
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            client.assign_issue(&maintainer, &contributor, &org, id);
+                        }));
+                        prop_assert!(result.is_err(), "expected error 7 at cap but got Ok");
+                        let count_after = client.get_org_assignment_count(&contributor, &org);
+                        prop_assert_eq!(count_before, count_after, "state changed on rejected assign");
+                        // Clean up the pending application we just created
+                        client.withdraw_application(&contributor, &org, id);
+                    }
+                }
+                OrgAction::Revoke(id) => {
+                    if assigned.contains(id) {
+                        client.revoke_assignment(&maintainer, &contributor, &org, id);
+                        assigned.remove(id);
+                    }
+                    // ignore if not assigned
+                }
+                OrgAction::Complete(id) => {
+                    if assigned.contains(id) {
+                        client.complete_assignment(&maintainer, &contributor, &org, id);
+                        assigned.remove(id);
+                    }
+                    // ignore if not assigned
+                }
+            }
+
+            let count = client.get_org_assignment_count(&contributor, &org);
+            prop_assert!(count <= 4, "org count {} exceeds cap 4", count);
+            prop_assert_eq!(count, assigned.len() as u32, "count mismatch: contract={} model={}", count, assigned.len());
+        }
+    }
+}
+
 // Feature: workload-governor, Property 16: Storage Key Collision Freedom
 #[test]
 fn prop_storage_key_collision_freedom() {
