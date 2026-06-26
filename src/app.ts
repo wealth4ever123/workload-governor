@@ -7,7 +7,8 @@ import contributorsRouter from './routes/contributors';
 import adminRouter from './routes/admin';
 import transactionsRouter from './routes/transactions';
 import eventsRouter from './routes/events';
-import { correlationIdMiddleware, errorHandler } from './logger';
+import { correlationIdMiddleware } from './logger';
+import { errorHandler } from './errors';
 import { setupSwagger } from './swagger';
 
 export function createApp(): express.Application {

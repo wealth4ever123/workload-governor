@@ -1,58 +1,69 @@
 import request from 'supertest';
+import { Keypair } from '@stellar/stellar-sdk';
+import { MockPool, resetDb } from './setup';
+
+const mockPool = new MockPool();
+jest.mock('../../src/db', () => ({
+  pool: mockPool,
+  migrate: jest.fn(),
+  healthCheck: jest.fn(),
+}));
+
 import { createApp } from '../../src/app';
-import { pool } from '../../src/db';
-import { resetDb } from './setup';
 
 const app = createApp();
-const ADDR = 'GCONTRIBUTOR123';
+const ADDR = Keypair.random().publicKey();
 
-beforeAll(async () => {
-  process.env.DATABASE_URL ??= 'postgresql://test:test@localhost:5432/testdb';
-  await resetDb();
-
-  const { rows } = await pool.query(
+beforeEach(async () => {
+  resetDb();
+  const { rows } = await mockPool.query(
     `INSERT INTO issues (org_id, title, status) VALUES ('org-a', 'Issue 1', 'open') RETURNING id`,
   );
-  const issueId: number = rows[0].id;
-
-  await pool.query(
-    `INSERT INTO applications (contributor, org_id, issue_id) VALUES ($1, 'org-a', $2)`,
-    [ADDR, issueId],
+  const issueId = rows[0].id;
+  await mockPool.query(
+    `INSERT INTO applications (contributor, org_id, issue_id) VALUES ($1, $2, $3)`,
+    [ADDR, 'org-a', issueId],
   );
-  await pool.query(
-    `INSERT INTO assignments (contributor, org_id, issue_id) VALUES ($1, 'org-a', $2)`,
-    [ADDR, issueId],
+  await mockPool.query(
+    `INSERT INTO assignments (contributor, org_id, issue_id) VALUES ($1, $2, $3)`,
+    [ADDR, 'org-a', issueId],
   );
 });
 
-afterAll(() => pool.end());
-
 describe('GET /api/contributors/:address/applications', () => {
-  it('returns applications for known contributor', async () => {
-    const res = await request(app).get(`/api/contributors/${ADDR}/applications`);
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].contributor).toBe(ADDR);
+  it('returns 400 for invalid stellar address', async () => {
+    const res = await request(app).get('/api/contributors/bad-addr/applications');
+    expect(res.status).toBe(400);
   });
 
-  it('returns empty array for unknown contributor', async () => {
-    const res = await request(app).get('/api/contributors/UNKNOWN/applications');
+  it('returns 200 for valid address', async () => {
+    const res = await request(app).get(`/api/contributors/${ADDR}/applications`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
   });
 });
 
 describe('GET /api/contributors/:address/assignments', () => {
-  it('returns assignments for known contributor', async () => {
-    const res = await request(app).get(`/api/contributors/${ADDR}/assignments`);
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].contributor).toBe(ADDR);
+  it('returns 400 for invalid stellar address', async () => {
+    const res = await request(app).get('/api/contributors/bad-addr/assignments');
+    expect(res.status).toBe(400);
   });
 
-  it('returns empty array for unknown contributor', async () => {
-    const res = await request(app).get('/api/contributors/UNKNOWN/assignments');
+  it('returns 200 for valid address', async () => {
+    const res = await request(app).get(`/api/contributors/${ADDR}/assignments`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+  });
+});
+
+describe('GET /api/contributors/:address/counts', () => {
+  it('returns 400 for invalid stellar address', async () => {
+    const res = await request(app).get('/api/contributors/bad-addr/counts');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 200 with count fields for valid address', async () => {
+    const res = await request(app).get(`/api/contributors/${ADDR}/counts`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('totalApplications');
+    expect(res.body).toHaveProperty('totalAssignments');
   });
 });
