@@ -6,6 +6,7 @@ import issuesRouter from './routes/issues';
 import contributorsRouter from './routes/contributors';
 import adminRouter from './routes/admin';
 import transactionsRouter from './routes/transactions';
+import { correlationIdMiddleware, errorHandler } from './logger';
 
 export function createApp(): express.Application {
   const app = express();
@@ -25,6 +26,7 @@ export function createApp(): express.Application {
 
   // JSON parser middleware
   app.use(express.json());
+  app.use(correlationIdMiddleware);
 
   app.get('/health', async (req: Request, res: Response) => {
     try {
@@ -42,6 +44,8 @@ export function createApp(): express.Application {
   app.use('/api/contributors', contributorsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/transactions', transactionsRouter);
+
+  app.use(errorHandler);
 
   return app;
 }
