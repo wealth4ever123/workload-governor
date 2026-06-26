@@ -34,6 +34,9 @@ class SorobanService {
             .setTimeout(30)
             .build();
     }
+    buildRawTransaction(sourceAddress, sequence, fnName, args) {
+        return this.buildRaw(sourceAddress, sequence, fnName, args);
+    }
     parseContractError(errorMessage) {
         // Try to extract error code from Soroban error message
         const codeMatch = errorMessage.match(/error code=(\d+)/);

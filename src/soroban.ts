@@ -87,6 +87,15 @@ export class SorobanService {
       .build();
   }
 
+  buildRawTransaction(
+    sourceAddress: string,
+    sequence: string,
+    fnName: string,
+    args: xdr.ScVal[],
+  ): Transaction {
+    return this.buildRaw(sourceAddress, sequence, fnName, args);
+  }
+
   private parseContractError(errorMessage: string): SorobanContractError {
     // Try to extract error code from Soroban error message
     const codeMatch = errorMessage.match(/error code=(\d+)/);

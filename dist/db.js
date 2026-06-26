@@ -24,37 +24,14 @@ async function healthCheck() {
         client.release();
     }
 }
-async function runMigration(client, name, sql) {
-    try {
-        await client.query(sql);
-        console.log(`✓ Migration: ${name}`);
-    }
-    catch (err) {
-        console.error(`✗ Migration failed: ${name}`, err);
-        throw err;
-    }
-}
 async function migrate() {
     await exports.pool.query(`
     CREATE TABLE IF NOT EXISTS issues (
-      id        INTEGER PRIMARY KEY,
-      github_id INTEGER NOT NULL UNIQUE,
-      org       TEXT    NOT NULL,
+      id        SERIAL PRIMARY KEY,
+      org_id    TEXT    NOT NULL,
       title     TEXT    NOT NULL,
-      body      TEXT,
-      labels    TEXT[],
-      state     TEXT    NOT NULL DEFAULT 'open',
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_issues_org ON issues(org);
-    CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
-
-    CREATE TABLE IF NOT EXISTS sync_metadata (
-      id           SERIAL PRIMARY KEY,
-      org          TEXT    NOT NULL UNIQUE,
-      last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      status    TEXT    NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS maintainers (
@@ -78,5 +55,30 @@ async function migrate() {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (contributor, org_id, issue_id)
     );
+
+    CREATE TABLE IF NOT EXISTS pending_transactions (
+      admin_address       TEXT NOT NULL,
+      maintainer_address  TEXT NOT NULL,
+      org_id              TEXT NOT NULL,
+      transaction_xdr     TEXT NOT NULL,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (admin_address, maintainer_address, org_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contract_events (
+      id              SERIAL PRIMARY KEY,
+      event_type      TEXT NOT NULL,
+      ledger_seq      INTEGER NOT NULL,
+      timestamp       TIMESTAMPTZ NOT NULL,
+      actor           TEXT NOT NULL,
+      org_id          TEXT NOT NULL,
+      issue_id        INTEGER,
+      contributor     TEXT,
+      data            JSONB,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contract_events_org_id ON contract_events(org_id);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp ON contract_events(timestamp);
   `);
 }
