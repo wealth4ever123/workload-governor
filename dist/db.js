@@ -25,51 +25,60 @@ async function healthCheck() {
     }
 }
 async function migrate() {
-    const client = await exports.pool.connect();
-    try {
-        await client.query('BEGIN');
-        await client.query(`
-      CREATE TABLE IF NOT EXISTS issues (
-        id        SERIAL PRIMARY KEY,
-        org_id    TEXT    NOT NULL,
-        title     TEXT    NOT NULL,
-        status    TEXT    NOT NULL DEFAULT 'open',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-        await client.query(`
-      CREATE TABLE IF NOT EXISTS maintainers (
-        address TEXT NOT NULL,
-        org_id  TEXT NOT NULL,
-        PRIMARY KEY (address, org_id)
-      );
-    `);
-        await client.query(`
-      CREATE TABLE IF NOT EXISTS applications (
-        contributor TEXT    NOT NULL,
-        org_id      TEXT    NOT NULL,
-        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (contributor, org_id, issue_id)
-      );
-    `);
-        await client.query(`
-      CREATE TABLE IF NOT EXISTS assignments (
-        contributor TEXT    NOT NULL,
-        org_id      TEXT    NOT NULL,
-        issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (contributor, org_id, issue_id)
-      );
-    `);
-        await client.query('COMMIT');
-        console.log('✓ All migrations completed successfully');
-    }
-    catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-    }
-    finally {
-        client.release();
-    }
+    await exports.pool.query(`
+    CREATE TABLE IF NOT EXISTS issues (
+      id        SERIAL PRIMARY KEY,
+      org_id    TEXT    NOT NULL,
+      title     TEXT    NOT NULL,
+      status    TEXT    NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS maintainers (
+      address TEXT NOT NULL,
+      org_id  TEXT NOT NULL,
+      PRIMARY KEY (address, org_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS applications (
+      contributor TEXT    NOT NULL,
+      org_id      TEXT    NOT NULL,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assignments (
+      contributor TEXT    NOT NULL,
+      org_id      TEXT    NOT NULL,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_transactions (
+      admin_address       TEXT NOT NULL,
+      maintainer_address  TEXT NOT NULL,
+      org_id              TEXT NOT NULL,
+      transaction_xdr     TEXT NOT NULL,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (admin_address, maintainer_address, org_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS contract_events (
+      id              SERIAL PRIMARY KEY,
+      event_type      TEXT NOT NULL,
+      ledger_seq      INTEGER NOT NULL,
+      timestamp       TIMESTAMPTZ NOT NULL,
+      actor           TEXT NOT NULL,
+      org_id          TEXT NOT NULL,
+      issue_id        INTEGER,
+      contributor     TEXT,
+      data            JSONB,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contract_events_org_id ON contract_events(org_id);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp ON contract_events(timestamp);
+  `);
 }

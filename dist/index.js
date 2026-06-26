@@ -3,51 +3,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const app_1 = require("./app");
 const db_1 = require("./db");
-const scheduler_1 = require("./scheduler");
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
-const HOST = process.env.HOST ?? '0.0.0.0';
-async function start() {
-    try {
-        await (0, db_1.migrate)();
-        const app = (0, app_1.createApp)();
-        const server = app.listen(PORT, HOST, () => {
-            console.log(`Server running on http://${HOST}:${PORT}`);
-        });
-        // Start scheduler for GitHub issues sync
-        const orgsEnv = process.env.GITHUB_ORGS ?? '';
-        const orgs = orgsEnv
-            .split(',')
-            .map((org) => org.trim())
-            .filter((org) => org.length > 0);
-        if (orgs.length > 0) {
-            (0, scheduler_1.startScheduler)(orgs);
-        }
-        // Graceful shutdown
-        const gracefulShutdown = async (signal) => {
-            console.log(`${signal} received, starting graceful shutdown...`);
-            (0, scheduler_1.stopScheduler)();
-            server.close(async () => {
-                console.log('HTTP server closed');
-                await db_1.pool.end();
-                console.log('Database pool closed');
-                process.exit(0);
-            });
-            // Force shutdown after 30 seconds
-            setTimeout(() => {
-                console.error('Forced shutdown after timeout');
-                process.exit(1);
-            }, 30000);
-        };
-        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-        process.on('unhandledRejection', (reason, promise) => {
-            console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-            process.exit(1);
-        });
-    }
-    catch (err) {
-        console.error('Failed to start server', err);
-        process.exit(1);
-    }
-}
-start();
+const eventIndexer_1 = require("./eventIndexer");
+const PORT = process.env.PORT ?? 3000;
+(0, db_1.migrate)()
+    .then(() => {
+    const app = (0, app_1.createApp)();
+    const server = app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+    (0, eventIndexer_1.startEventIndexer)().catch((err) => {
+        console.error('Failed to start event indexer', err);
+    });
+    process.on('SIGTERM', () => {
+        console.log('SIGTERM received, shutting down gracefully');
+        server.close();
+    });
+})
+    .catch((err) => {
+    console.error('Failed to migrate DB', err);
+    process.exit(1);
+});

@@ -5,7 +5,6 @@ import { validateRequest } from '../middleware/validation';
 import { issueQuerySchema } from '../schemas/issues';
 
 const router = Router();
-const CACHE_TTL = 30;
 
 interface IssuesListParams {
   org_id?: string;
@@ -38,15 +37,8 @@ router.get(
     try {
       const { org_id, status, search, page = '1', limit = '10' } = req.query as IssuesListParams;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
-
-    const cacheKey = `issues:${org_id}:${status}:${search}:${pageNum}:${limitNum}`;
-    const cached = await getCached<IssuesResponse>(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
-    }
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 10));
 
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -70,7 +62,7 @@ router.get(
       `SELECT COUNT(*) as count FROM issues ${where}`,
       params,
     );
-    const total = parseInt(countResult.rows[0]?.count || '0', 10);
+    const total = parseInt((countResult.rows[0]?.count as string) || '0', 10);
 
     const offset = (pageNum - 1) * limitNum;
     params.push(limitNum);
@@ -89,7 +81,6 @@ router.get(
       totalPages: Math.ceil(total / limitNum),
     };
 
-    await setCached(cacheKey, response, CACHE_TTL);
     res.json(response);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'internal server error';
