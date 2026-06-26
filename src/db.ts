@@ -36,53 +36,58 @@ async function runMigration(client: PoolClient, name: string, sql: string): Prom
 export async function migrate(): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS issues (
-      id        INTEGER PRIMARY KEY,
-      github_id INTEGER NOT NULL UNIQUE,
-      org       TEXT    NOT NULL,
+      id        SERIAL PRIMARY KEY,
+      org_id    TEXT    NOT NULL,
       title     TEXT    NOT NULL,
-      body      TEXT,
-      labels    TEXT[],
-      state     TEXT    NOT NULL DEFAULT 'open',
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      status    TEXT    NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
-    CREATE INDEX IF NOT EXISTS idx_issues_org ON issues(org);
-    CREATE INDEX IF NOT EXISTS idx_issues_updated_at ON issues(updated_at);
-
-    CREATE TABLE IF NOT EXISTS sync_metadata (
-      id           SERIAL PRIMARY KEY,
-      org          TEXT    NOT NULL UNIQUE,
-      last_sync_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    CREATE TABLE IF NOT EXISTS maintainers (
+      address TEXT NOT NULL,
+      org_id  TEXT NOT NULL,
+      PRIMARY KEY (address, org_id)
     );
 
-    await runMigration(
-      client,
-      'create_issues_search_index',
-      `CREATE INDEX IF NOT EXISTS idx_issues_org_id_status
-        ON issues(org_id, status)`,
+    CREATE TABLE IF NOT EXISTS applications (
+      contributor TEXT    NOT NULL,
+      org_id      TEXT    NOT NULL,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
     );
 
-    await runMigration(
-      client,
-      'create_applications_contributor_index',
-      `CREATE INDEX IF NOT EXISTS idx_applications_contributor
-        ON applications(contributor)`,
+    CREATE TABLE IF NOT EXISTS assignments (
+      contributor TEXT    NOT NULL,
+      org_id      TEXT    NOT NULL,
+      issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (contributor, org_id, issue_id)
     );
 
-    await runMigration(
-      client,
-      'create_assignments_contributor_index',
-      `CREATE INDEX IF NOT EXISTS idx_assignments_contributor
-        ON assignments(contributor)`,
+    CREATE TABLE IF NOT EXISTS pending_transactions (
+      admin_address       TEXT NOT NULL,
+      maintainer_address  TEXT NOT NULL,
+      org_id              TEXT NOT NULL,
+      transaction_xdr     TEXT NOT NULL,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (admin_address, maintainer_address, org_id)
     );
 
-    await client.query('COMMIT');
-    console.log('✓ All migrations completed successfully');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+    CREATE TABLE IF NOT EXISTS contract_events (
+      id              SERIAL PRIMARY KEY,
+      event_type      TEXT NOT NULL,
+      ledger_seq      INTEGER NOT NULL,
+      timestamp       TIMESTAMPTZ NOT NULL,
+      actor           TEXT NOT NULL,
+      org_id          TEXT NOT NULL,
+      issue_id        INTEGER,
+      contributor     TEXT,
+      data            JSONB,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contract_events_org_id ON contract_events(org_id);
+    CREATE INDEX IF NOT EXISTS idx_contract_events_timestamp ON contract_events(timestamp);
+  `);
 }
