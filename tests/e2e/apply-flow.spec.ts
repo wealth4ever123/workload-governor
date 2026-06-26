@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 const TEST_PUBLIC_KEY = 'GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBWE3ITMG4YOS';
-const FIXED_XDR = 'AAAAAgAAAAA...FIXEDXDR...AAAAA==';
 
 test('contributor apply flow', async ({ page }) => {
   // Inject Freighter mock before any page script runs
-  await page.addInitScript((pubkey) => {
-    (window as any).freighter = {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  await page.addInitScript((_pubkey) => {
+    (window as unknown as { freighter: { isConnected: () => Promise<boolean>; getPublicKey: () => Promise<string>; signTransaction: (xdr: string) => Promise<string> } }).freighter = {
       isConnected: () => Promise.resolve(true),
-      getPublicKey: () => Promise.resolve(pubkey),
+      getPublicKey: () => Promise.resolve(_pubkey),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       signTransaction: (_xdr: string) =>
         Promise.resolve('AAAAAgAAAAA...FIXEDXDR...AAAAA=='),
     };
