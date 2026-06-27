@@ -350,3 +350,142 @@
   .issue-card__actions { flex-direction: column; }
   .issue-card__actions .btn { width: 100%; justify-content: center; }
 }
+
+/* ============================================================
+   Badge — design system
+   ============================================================ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs, .75rem);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 9999px);
+  white-space: nowrap;
+}
+.badge--success { background: color-mix(in srgb, var(--color-success-500) 20%, transparent); color: var(--color-success-500); }
+.badge--warning { background: color-mix(in srgb, var(--color-warning-500) 20%, transparent); color: var(--color-warning-500); }
+.badge--error   { background: color-mix(in srgb, var(--color-error-500)   20%, transparent); color: var(--color-error-500); }
+.badge--info    { background: color-mix(in srgb, var(--color-primary)      20%, transparent); color: var(--color-primary); }
+.badge--neutral { background: var(--color-border); color: var(--color-muted); }
+
+/* ============================================================
+   Card — design system
+   ============================================================ */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card__header {
+  padding: var(--space-4, 16px);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-md, 1rem);
+  font-weight: 600;
+  color: var(--color-text);
+}
+.card__body   { padding: var(--space-4, 16px); flex: 1; color: var(--color-text); }
+.card__footer {
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: var(--space-2, 8px);
+  justify-content: flex-end;
+}
+
+/* ============================================================
+   Modal — design system (uses native <dialog>)
+   ============================================================ */
+.modal {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0;
+  max-width: 520px;
+  width: 90vw;
+  box-shadow: var(--shadow-lg);
+}
+.modal::backdrop { background: rgba(0,0,0,.65); }
+.modal__content  { display: flex; flex-direction: column; gap: 0; }
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4, 16px) var(--space-6, 24px);
+  border-bottom: 1px solid var(--color-border);
+}
+.modal__title { font-size: var(--text-lg, 1.125rem); font-weight: 600; margin: 0; }
+.modal__close {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  border-radius: var(--radius, 6px);
+  padding: 4px 6px;
+  line-height: 1;
+}
+.modal__close:hover { color: var(--color-text); }
+.modal__body   { padding: var(--space-6, 24px); line-height: var(--leading-normal, 1.5); }
+.modal__footer {
+  padding: var(--space-4, 16px) var(--space-6, 24px);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: var(--space-2, 8px);
+  justify-content: flex-end;
+}
+
+/* ============================================================
+   Table — design system
+   ============================================================ */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm, .8125rem);
+  color: var(--color-text);
+}
+.table caption.table__caption {
+  text-align: left;
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  font-weight: 600;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+  caption-side: top;
+}
+.table thead th {
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  text-align: left;
+  font-size: var(--text-xs, .75rem);
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+.table tbody tr { border-bottom: 1px solid var(--color-border); }
+.table tbody tr:last-child { border-bottom: none; }
+.table tbody tr:hover { background: color-mix(in srgb, var(--color-primary) 5%, transparent); }
+.table tbody td { padding: var(--space-3, 12px) var(--space-4, 16px); }
+.table__empty { text-align: center; color: var(--color-muted); padding: var(--space-8, 32px) !important; }
+
+/* ============================================================
+   Gauge — design system
+   ============================================================ */
+.gauge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  margin: 0;
+}
+.gauge__pct   { font-size: 1.1em; font-weight: 700; }
+.gauge__value { font-size: .75em; }
+.gauge__label { font-size: var(--text-xs, .75rem); color: var(--color-muted); text-align: center; }
