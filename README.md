@@ -1,5 +1,10 @@
 # WorkloadGovernor
 
+[![codecov](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?token=CODECOV_TOKEN)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Backend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=backend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Frontend Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=frontend)](https://codecov.io/gh/FaveTeamz/workload-governor)
+[![Contract Coverage](https://codecov.io/gh/FaveTeamz/workload-governor/branch/main/graph/badge.svg?flag=contract)](https://codecov.io/gh/FaveTeamz/workload-governor)
+
 A production-ready Soroban smart contract for the **AlignmentDrips Wave** platform on the Stellar network.
 
 ## Purpose
@@ -44,6 +49,7 @@ This prevents a small group of faster developers from monopolizing open-source t
 | 9 | `ApplicationNotFound` | Application does not exist |
 | 10 | `AssignmentNotFound` | Assignment does not exist |
 | 11 | `AlreadyAssigned` | Issue already has an active assignment |
+| 13 | `CounterInconsistency` | Assignment entry exists but org counter is 0 (post-migration corruption) |
 
 ## Storage Design
 
@@ -82,6 +88,15 @@ cargo build --target wasm32v1-none --release
 stellar contract optimize --wasm target/wasm32v1-none/release/workload_governor.wasm
 ```
 
+### Binary Size
+
+| Build | Size |
+|---|---|
+| Unoptimized (`cargo build --release`) | ~28 KB |
+| Optimized (`stellar contract optimize`) | < 20 KB (target) |
+
+The release profile is pre-configured with `opt-level = 'z'` and `lto = true` in `Cargo.toml` to meet the 64 KB contract size limit.
+
 ## Testing
 
 ```bash
@@ -93,6 +108,16 @@ cargo test --features testutils prop_
 
 # Unit tests only
 cargo test --features testutils unit_
+```
+
+## Benchmarking
+
+```bash
+# Run benchmark tests (prints CPU/memory usage to stdout)
+cargo test --features testutils bench_
+
+# Capture output for documentation
+cargo test --features testutils bench_ 2>&1 | tee benchmarks.txt
 ```
 
 ## Deploying
@@ -113,14 +138,27 @@ stellar contract invoke \
   --admin <ADMIN_ADDRESS>
 ```
 
-## Operations
+## Design System
 
-| Runbook | Description |
-|---------|-------------|
-| [docs/runbooks/contract-upgrade.md](docs/runbooks/contract-upgrade.md) | Build, optimise, upload WASM, and call `upgrade` |
-| [docs/runbooks/admin-key-rotation.md](docs/runbooks/admin-key-rotation.md) | Two-step admin key transfer procedure |
-| [docs/runbooks/cap-emergency-increase.md](docs/runbooks/cap-emergency-increase.md) | Raise contributor caps (requires governance vote + upgrade) |
-| [docs/runbooks/incident-response.md](docs/runbooks/incident-response.md) | What to do when a bug is found post-deploy |
+The frontend ships a token-driven design system consumed by all UI components.
+
+| Artifact | Location |
+|---|---|
+| Design tokens (JSON) | [`frontend/src/tokens.json`](frontend/src/tokens.json) |
+| CSS custom properties | [`frontend/src/tokens.css`](frontend/src/tokens.css) |
+| Component library | [`frontend/src/components/`](frontend/src/components/) |
+| Storybook stories | [`frontend/src/stories/`](frontend/src/stories/) |
+
+### Running Storybook
+
+```bash
+cd frontend
+npm run storybook        # dev server at http://localhost:6006
+npm run build-storybook  # static build → storybook-static/
+```
+
+Components covered: **Button** (primary / secondary / ghost), **Badge** (5 semantic variants), **Card**, **Modal**, **Table**, **Gauge**.  
+Dark mode is driven by `@media (prefers-color-scheme: dark)` CSS custom properties — no extra dependency required.
 
 ## License
 
