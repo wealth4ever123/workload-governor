@@ -118,6 +118,28 @@ stellar contract invoke \
   --admin <ADMIN_ADDRESS>
 ```
 
+## Design System
+
+The frontend ships a token-driven design system consumed by all UI components.
+
+| Artifact | Location |
+|---|---|
+| Design tokens (JSON) | [`frontend/src/tokens.json`](frontend/src/tokens.json) |
+| CSS custom properties | [`frontend/src/tokens.css`](frontend/src/tokens.css) |
+| Component library | [`frontend/src/components/`](frontend/src/components/) |
+| Storybook stories | [`frontend/src/stories/`](frontend/src/stories/) |
+
+### Running Storybook
+
+```bash
+cd frontend
+npm run storybook        # dev server at http://localhost:6006
+npm run build-storybook  # static build → storybook-static/
+```
+
+Components covered: **Button** (primary / secondary / ghost), **Badge** (5 semantic variants), **Card**, **Modal**, **Table**, **Gauge**.  
+Dark mode is driven by `@media (prefers-color-scheme: dark)` CSS custom properties — no extra dependency required.
+
 ## License
 
 Apache-2.0
